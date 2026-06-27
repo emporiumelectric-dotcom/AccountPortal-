@@ -198,7 +198,7 @@ function buildUI(party, txns, bills, openingDr, closingBal){
   const today = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
 
   // Outstanding bills only
-  const outstandingBills = (bills || []).filter(b => b.bill_amount > 0);
+  const outstandingBills = (bills || []).filter(b => parseFloat(b.bill_amount || 0) > 0);
 
   let txnRows = '';
   if(openingDr !== 0){
@@ -267,11 +267,11 @@ function buildUI(party, txns, bills, openingDr, closingBal){
     });
   }
 
-  const waMsg = encodeURIComponent(`Hello ${party.ledger_name}, your account with Electric Emporium shows an outstanding of ${netAmt} ${netSide}. Please contact us at +91 94258 31035.`);
+  const waMsg = encodeURIComponent(`Hello ${party.party_name}, your account with Electric Emporium shows an outstanding of ${netAmt} ${netSide}. Please contact us at +91 94258 31035.`);
 
   document.getElementById('content').innerHTML = `
     <div class="party-card">
-      <div class="party-name">${party.ledger_name}</div>
+      <div class="party-name">${party.party_name}</div>
       <div class="party-date">Statement as of ${today}</div>
       <div class="balance-label">Net outstanding</div>
       <div class="balance-row">
@@ -347,23 +347,23 @@ async function init(){
     const snapshotId = snapshotResult && snapshotResult.length > 0 ? snapshotResult[0].id : null;
     console.log('Snapshot ID:', snapshotId);
 
-    // Fetch bills for this party
+    // Fetch bills for this party — using party_name column
     let bills = [];
     if(snapshotId){
-      const billsResult = await sbGet(`tally_bills?snapshot_id=eq.${snapshotId}&bill_party=ilike.${encodeURIComponent(partyName)}&select=*&order=bill_date.asc`);
+      const billsResult = await sbGet(`tally_bills?snapshot_id=eq.${snapshotId}&party_name=ilike.${encodeURIComponent(partyName)}&select=*&order=bill_date.asc`);
       bills = Array.isArray(billsResult) ? billsResult : [];
       if(!Array.isArray(billsResult)) console.warn('Bills error:', billsResult);
     }
 
-    // Fetch party info for closing balance
+    // Fetch party info for closing balance — using party_name column
     let parties = [];
     if(snapshotId){
-      const partiesResult = await sbGet(`tally_receivables_parties?snapshot_id=eq.${snapshotId}&ledger_name=ilike.${encodeURIComponent(partyName)}&select=*`);
+      const partiesResult = await sbGet(`tally_receivables_parties?snapshot_id=eq.${snapshotId}&party_name=ilike.${encodeURIComponent(partyName)}&select=*`);
       parties = Array.isArray(partiesResult) ? partiesResult : [];
       if(!Array.isArray(partiesResult)) console.warn('Parties error:', partiesResult);
     }
 
-    const party = { ledger_name: partyName };
+    const party = { party_name: partyName };
     const closingBal = parties && parties.length > 0 ? parseFloat(parties[0].amount || 0) : openingDr;
 
     // Transactions will come from TDL later — for now show bills as transactions
