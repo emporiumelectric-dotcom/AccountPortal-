@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script>
+    // Preserve the query string when redirecting 404s to index.html
+    var search = window.location.search;
+    var hash = window.location.hash;
+    
+    // Redirect to index.html with original query params
+    window.location = '/accountportal/' + search + hash;
+  </script>
+</head>
+<body>
+  <p>Redirecting...</p>
+</body>
+</html>
