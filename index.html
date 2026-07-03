@@ -149,6 +149,15 @@ async function sbGet(path){
   return r.json();
 }
 
+async function sbRpc(fn, body){
+  const r = await fetch(SB_URL + '/rest/v1/rpc/' + fn, {
+    method: 'POST',
+    headers: { ...SB_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
 function getToken(){
   // Read token from hash (e.g., #token=abc123 or just #abc123)
   const hash = window.location.hash.substring(1);
@@ -324,47 +333,27 @@ async function init(){
   }
 
   try {
-    // Fetch portal token
-    const tokens = await sbGet(`portal_tokens?token=eq.${token}&select=*`);
-    if(!tokens || tokens.length === 0){
+    // Single RPC call — table access is locked down server-side (RLS),
+    // this SECURITY DEFINER function is the only anon-reachable door and
+    // returns data scoped to this token's ledger only.
+    const resp = await sbRpc('get_portal_data', { p_token: token });
+
+    if(!resp || resp.error){
       showError('Link expired', 'This link has expired or is invalid. Please contact Electric Emporium for a new link.');
       return;
     }
 
-    const portalData = tokens[0];
-    const partyName = portalData.ledger_name;
+    const partyName = resp.ledger_name;
     console.log('Party name:', partyName);
 
-    // Fetch all data in parallel
-    const [obResult, snapshotResult] = await Promise.all([
-      sbGet(`party_opening_balances?ledger_name=eq.${encodeURIComponent(partyName)}&select=opening_dr,opening_cr`),
-      sbGet(`tally_snapshots?location_id=eq.1&order=synced_at.desc&limit=1&select=id,synced_at`)
-    ]);
-
-    const obRow = obResult && obResult.length > 0 ? obResult[0] : null;
+    const obRow = resp.opening_balance;
     const openingDr = obRow ? (parseFloat(obRow.opening_dr||0) - parseFloat(obRow.opening_cr||0)) : 0;
 
-    const snapshotId = snapshotResult && snapshotResult.length > 0 ? snapshotResult[0].id : null;
-    console.log('Snapshot ID:', snapshotId);
-
-    // Fetch bills for this party — using party_name column
-    let bills = [];
-    if(snapshotId){
-      const billsResult = await sbGet(`tally_bills?snapshot_id=eq.${snapshotId}&party_name=ilike.${encodeURIComponent(partyName)}&select=*&order=bill_date.asc`);
-      bills = Array.isArray(billsResult) ? billsResult : [];
-      if(!Array.isArray(billsResult)) console.warn('Bills error:', billsResult);
-    }
-
-    // Fetch party info for closing balance — using party_name column
-    let parties = [];
-    if(snapshotId){
-      const partiesResult = await sbGet(`tally_receivables_parties?snapshot_id=eq.${snapshotId}&party_name=ilike.${encodeURIComponent(partyName)}&select=*`);
-      parties = Array.isArray(partiesResult) ? partiesResult : [];
-      if(!Array.isArray(partiesResult)) console.warn('Parties error:', partiesResult);
-    }
+    const bills = Array.isArray(resp.bills) ? resp.bills : [];
+    const receivable = resp.receivable;
 
     const party = { party_name: partyName };
-    const closingBal = parties && parties.length > 0 ? parseFloat(parties[0].amount || 0) : openingDr;
+    const closingBal = receivable ? parseFloat(receivable.amount || 0) : openingDr;
 
     // Transactions will come from TDL later — for now show bills as transactions
     const txns = (bills || []).map(b => ({
